@@ -135,94 +135,80 @@ The proposed solution is to build an end-to-end ETL pipeline with the following 
 
 ## 🔧 System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         SOURCE LAYER                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │sales_2025_01 │  │sales_2025_02 │  │sales_2025_03 │          │
-│  │    .csv      │  │    .csv      │  │    .csv      │          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-│         └─────────────────┼──────────────────┘                  │
-│                           ▼                                      │
-│                  ┌─────────────────┐                            │
-│                  │  Combine CSVs   │                            │
-│                  │  + source_file  │                            │
-│                  └────────┬────────┘                            │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │
-┌───────────────────────────┼─────────────────────────────────────┐
-│                 TRANSFORM LAYER (Python Script)                 │
-│                           ▼                                      │
-│  ┌─────────────────────────────────────────────────────┐       │
-│  │           Type 2 SCD Dimension Creation              │       │
-│  │  ┌──────────────────┐  ┌──────────────────┐         │       │
-│  │  │  dim_customer    │  │   dim_product    │         │       │
-│  │  │  - valid_from    │  │   - valid_from   │         │       │
-│  │  │  - valid_to      │  │   - valid_to     │         │       │
-│  │  │  - is_current    │  │   - is_current   │         │       │
-│  │  └──────────────────┘  └──────────────────┘         │       │
-│  │                                                     │       │
-│  │  ┌─────────────────────────────────────────────┐   │       │
-│  │  │           dim_date Creation                  │   │       │
-│  │  └─────────────────────────────────────────────┘   │       │
-│  └─────────────────────────────────────────────────────┘       │
-│                           │                                      │
-│                           ▼                                      │
-│  ┌─────────────────────────────────────────────────────┐       │
-│  │           Fact Table Creation with SCD Join          │       │
-│  │  Join raw_data with correct dimension versions      │       │
-│  │  based on order_date                                 │       │
-│  └─────────────────────────────────────────────────────┘       │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │
-┌───────────────────────────┼─────────────────────────────────────┐
-│                   LOAD LAYER (PostgreSQL)                       │
-│                           ▼                                      │
-│  ┌─────────────────────────────────────────────────────┐       │
-│  │                 Data Warehouse                        │       │
-│  │                                                     │       │
-│  │  ┌─────────────────────────────────────────────┐   │       │
-│  │  │           Dimension Tables                   │   │       │
-│  │  │  - dim_customer (with SCD)                  │   │       │
-│  │  │  - dim_product (with SCD)                    │   │       │
-│  │  │  - dim_date                                   │   │       │
-│  │  └─────────────────────────────────────────────┘   │       │
-│  │                                                     │       │
-│  │  ┌─────────────────────────────────────────────┐   │       │
-│  │  │           Fact Table                          │   │       │
-│  │  │  - fact_sales                                  │   │       │
-│  │  │  - Foreign keys to dimensions                 │   │       │
-│  │  │  - Measures (sales, cost, profit)             │   │       │
-│  │  └─────────────────────────────────────────────┘   │       │
-│  └─────────────────────────────────────────────────────┘       │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │
-┌───────────────────────────┼─────────────────────────────────────┐
-│                   EXPORT LAYER (CSV Backup)                     │
-│                           ▼                                      │
-│  ┌─────────────────────────────────────────────────────┐       │
-│  │              Exported CSV Files                       │       │
-│  │  ┌──────────────────┐  ┌──────────────────┐         │       │
-│  │  │ dim_customer.csv │  │  dim_product.csv │         │       │
-│  │  ├──────────────────┤  ├──────────────────┤         │       │
-│  │  │   dim_date.csv   │  │  fact_sales.csv  │         │       │
-│  │  └──────────────────┘  └──────────────────┘         │       │
-│  └─────────────────────────────────────────────────────┘       │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │
-┌───────────────────────────┼─────────────────────────────────────┐
-│                ORCHESTRATION LAYER (Airflow)                    │
-│                           ▼                                      │
-│  ┌─────────────────────────────────────────────────────┐       │
-│  │           sales_data_warehouse DAG                   │       │
-│  │                                                     │       │
-│  │  1. run_transformation (executes Python script)    │       │
-│  │  2. verify_results (checks database)               │       │
-│  │                                                     │       │
-│  │  Schedule: Daily at 2 AM                            │       │
-│  │  Retries: 1 with 5 minute delay                    │       │
-│  └─────────────────────────────────────────────────────┘       │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph INPUT["Input Layer"]
+        CSV1[sales_2025_01.csv]
+        CSV2[sales_2025_02.csv]
+        CSV3[sales_2025_03.csv]
+    end
+
+    subgraph DEV["Development Environment"]
+        JUPYTER[Jupyter Lab<br>Port 8888]
+        DEV_CODE["./dev_code/<br>Notebooks"]
+    end
+
+    subgraph PROD["Production Environment"]
+        SCRIPT["./airflow/scripts/<br>data_transformation.py"]
+    end
+
+    subgraph ORCH["Orchestration"]
+        DAG[Airflow DAG<br>sales_data_warehouse]
+        SCHEDULE[Schedule: 2 AM Daily]
+    end
+
+    subgraph TRANSFORM["Transformation Logic"]
+        SCD[Type 2 SCD Implementation]
+        CUSTOMER[dim_customer<br>with history]
+        PRODUCT[dim_product<br>with history]
+        DATE[dim_date]
+        FACT[fact_sales]
+    end
+
+    subgraph DB["Data Warehouse"]
+        PG[(PostgreSQL<br>sales_dw)]
+        SCHEMA[Star Schema<br>with SCD Type 2]
+    end
+
+    subgraph EXPORT["Export"]
+        CSV_OUT[CSV Backups<br>./data/transformed/]
+    end
+
+    subgraph QUALITY["Quality Checks"]
+        INTEGRITY[Referential Integrity]
+        COUNTS[Row Count Validation]
+        NEGATIVE[No Negative Values]
+    end
+
+    subgraph NOTIFY["Notifications"]
+        EMAIL[Email Reports]
+    end
+
+    %% Connections
+    CSV1 & CSV2 & CSV3 --> JUPYTER
+    CSV1 & CSV2 & CSV3 --> SCRIPT
+    
+    JUPYTER -->|Develop| DEV_CODE
+    DEV_CODE -->|Convert to| SCRIPT
+    
+    SCRIPT -->|Executed by| DAG
+    DAG -->|Runs at| SCHEDULE
+    
+    SCRIPT -->|Implements| SCD
+    SCD --> CUSTOMER
+    SCD --> PRODUCT
+    SCD --> DATE
+    CUSTOMER & PRODUCT & DATE --> FACT
+    
+    FACT -->|Load to| PG
+    PG -->|Verify| QUALITY
+    QUALITY --> INTEGRITY
+    QUALITY --> COUNTS
+    QUALITY --> NEGATIVE
+    
+    PG -->|Export to| CSV_OUT
+    
+    DAG -->|On Complete| EMAIL
 ```
 
 ### Data Flow Description
@@ -500,7 +486,7 @@ output_path = '/data/transformed/'
 
 **Root Cause:** The script was still trying to write to Jupyter's home directory (`/home/jovyan/data/transformed/`) when running in Airflow.
 
-**Solution:** Updated the export path to use the shared `./data/transformed/` directory, which is properly mounted in both containers and writable by the Airflow user.
+**Solution:** Updated the export path to use the shared `/data/transformed/` directory, which is properly mounted in both containers and writable by the Airflow user.
 
 ## 🧠 Expected Outcomes
 
